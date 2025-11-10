@@ -12,9 +12,7 @@ Model name is converted to lowercase for the collection name:
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
-
-# Example schemas (replace with your own):
+from typing import Optional, List
 
 class User(BaseModel):
     """
@@ -29,20 +27,18 @@ class User(BaseModel):
 
 class Product(BaseModel):
     """
-    Products collection schema
-    Collection name: "product" (lowercase of class name)
+    Products collection schema for F1 merchandise
+    Collection name: "product"
     """
     title: str = Field(..., description="Product title")
     description: Optional[str] = Field(None, description="Product description")
-    price: float = Field(..., ge=0, description="Price in dollars")
-    category: str = Field(..., description="Product category")
+    price_inr: int = Field(..., ge=0, description="Price in Indian Rupees")
+    category: str = Field(..., description="Category: jersey | car_model")
+    team: str = Field(..., description="F1 Team name")
+    image: Optional[str] = Field(None, description="Primary image URL")
+    images: Optional[List[str]] = Field(default=None, description="Gallery image URLs")
+    sizes: Optional[List[str]] = Field(default=None, description="Available sizes for jerseys")
+    scale: Optional[str] = Field(default=None, description="Scale for car models (e.g., 1:18, 1:43)")
     in_stock: bool = Field(True, description="Whether product is in stock")
-
-# Add your own schemas here:
-# --------------------------------------------------
-
-# Note: The Flames database viewer will automatically:
-# 1. Read these schemas from GET /schema endpoint
-# 2. Use them for document validation when creating/editing
-# 3. Handle all database operations (CRUD) directly
-# 4. You don't need to create any database endpoints!
+    rating: Optional[float] = Field(default=None, ge=0, le=5, description="Average rating")
+    tags: Optional[List[str]] = Field(default=None, description="Search tags")

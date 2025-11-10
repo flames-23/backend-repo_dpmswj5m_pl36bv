@@ -1,8 +1,14 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional
+from bson import ObjectId
 
-app = FastAPI()
+from database import db, create_document, get_documents
+from schemas import Product
+
+app = FastAPI(title="F1 Merchandise Store API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,11 +20,7 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"message": "Hello from FastAPI Backend!"}
-
-@app.get("/api/hello")
-def hello():
-    return {"message": "Hello from the backend API!"}
+    return {"message": "F1 Merchandise Store Backend Running"}
 
 @app.get("/test")
 def test_database():
@@ -31,39 +33,103 @@ def test_database():
         "connection_status": "Not Connected",
         "collections": []
     }
-    
     try:
-        # Try to import database module
-        from database import db
-        
         if db is not None:
             response["database"] = "✅ Available"
             response["database_url"] = "✅ Configured"
             response["database_name"] = db.name if hasattr(db, 'name') else "✅ Connected"
             response["connection_status"] = "Connected"
-            
-            # Try to list collections to verify connectivity
             try:
                 collections = db.list_collection_names()
-                response["collections"] = collections[:10]  # Show first 10 collections
+                response["collections"] = collections[:10]
                 response["database"] = "✅ Connected & Working"
             except Exception as e:
                 response["database"] = f"⚠️  Connected but Error: {str(e)[:50]}"
         else:
             response["database"] = "⚠️  Available but not initialized"
-            
-    except ImportError:
-        response["database"] = "❌ Database module not found (run enable-database first)"
     except Exception as e:
         response["database"] = f"❌ Error: {str(e)[:50]}"
-    
-    # Check environment variables
-    import os
+
     response["database_url"] = "✅ Set" if os.getenv("DATABASE_URL") else "❌ Not Set"
     response["database_name"] = "✅ Set" if os.getenv("DATABASE_NAME") else "❌ Not Set"
-    
     return response
 
+# Utility to convert Mongo _id to string
+
+def serialize_product(doc: dict) -> dict:
+    doc_copy = {**doc}
+    if doc_copy.get("_id"):
+        doc_copy["id"] = str(doc_copy.pop("_id"))
+    return doc_copy
+
+class ProductCreate(Product):
+    pass
+
+@app.get("/api/products", response_model=List[dict])
+def list_products(team: Optional[str] = None, category: Optional[str] = None):
+    filter_query = {}
+    if team:
+        filter_query["team"] = team
+    if category:
+        filter_query["category"] = category
+
+    products = get_documents("product", filter_query)
+    return [serialize_product(p) for p in products]
+
+@app.post("/api/products", status_code=201)
+def create_product(product: ProductCreate):
+    inserted_id = create_document("product", product)
+    return {"id": inserted_id}
+
+# Seed endpoint to pre-populate F1 teams jerseys and car models
+@app.post("/api/seed")
+def seed_products():
+    teams = [
+        "Red Bull Racing", "Ferrari", "Mercedes", "McLaren", "Aston Martin",
+        "Alpine", "Williams", "RB", "Kick Sauber", "Haas"
+    ]
+
+    # Check if already seeded
+    existing = get_documents("product", {}, limit=1)
+    if existing:
+        return {"status": "already_seeded", "count": len(get_documents("product"))}
+
+    base_price_jersey = 4999
+    base_price_model = 7999
+    seed_items = []
+    for team in teams:
+        seed_items.append({
+            "title": f"{team} 2024 Team Jersey",
+            "description": f"Official {team} replica jersey with team sponsors.",
+            "price_inr": base_price_jersey,
+            "category": "jersey",
+            "team": team,
+            "image": None,
+            "sizes": ["S", "M", "L", "XL"],
+            "in_stock": True,
+            "tags": ["jersey", team.lower().replace(" ", "-")]
+        })
+        seed_items.append({
+            "title": f"{team} 2024 Car Model 1:18",
+            "description": f"Die-cast model of the {team} 2024 F1 car.",
+            "price_inr": base_price_model,
+            "category": "car_model",
+            "team": team,
+            "image": None,
+            "scale": "1:18",
+            "in_stock": True,
+            "tags": ["car-model", team.lower().replace(" ", "-")]
+        })
+
+    # Insert all
+    ids = []
+    for item in seed_items:
+        try:
+            ids.append(create_document("product", item))
+        except Exception:
+            continue
+
+    return {"status": "seeded", "inserted": len(ids)}
 
 if __name__ == "__main__":
     import uvicorn
